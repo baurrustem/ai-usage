@@ -1,0 +1,27 @@
+name: Bug / Ошибка
+description: Report a reproducible problem without personal account data.
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: 'Do not attach credentials, raw logs, snapshots, databases, or unredacted account screenshots. / Не прикладывайте авторизацию и личные данные.'
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions / Версии
+      description: AI Usage, macOS, iOS, Scriptable, enabled provider CLI versions, iPhone model and widget size.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction / Как повторить
+      description: What happened, what you expected, and the smallest steps to reproduce. Synthetic data is welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Reviewed diagnostics / Проверенная диагностика
+      description: Optional output from ai-usage doctor --share. Review and redact before submitting.
+      render: json

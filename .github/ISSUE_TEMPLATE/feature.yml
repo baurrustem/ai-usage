@@ -1,0 +1,15 @@
+name: Feature / Предложение
+description: Suggest a new capability or improvement.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem / Задача пользователя
+      description: What would this help you do?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior / Предлагаемое поведение
+      description: Include the data source and coverage if you propose a new metric. Do not include credentials.

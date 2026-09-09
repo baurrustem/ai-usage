@@ -1,0 +1,7 @@
+{
+  "configVersion": 1,
+  "language": "en",
+  "providers": ["claude", "codex"],
+  "timeZone": "Europe/Paris",
+  "display": {}
+}

@@ -1,0 +1,12 @@
+{
+  "configVersion": 1,
+  "display": {
+    "claude": {
+      "hiddenLimitTerms": ["sonnet"],
+      "pinnedLimits": [
+        {"id": "claude-weekly-scoped-fable", "title": "Fable", "windowMinutes": 10080}
+      ]
+    },
+    "codex": {"hiddenLimitTerms": ["spark", "codex_bengalfox"]}
+  }
+}
