@@ -6,6 +6,15 @@ Your Claude Code and Codex subscription limits on your iPhone, with local token 
 
 This is an early community release. The widget has been used on a real iPhone; automated tests and browser previews do not replace testing every device size or iOS version. This project is independent of Anthropic, OpenAI, Apple, and Scriptable.
 
+## Screenshots
+
+<p>
+  <img src="docs/images/widget-light.png" width="360" alt="AI Usage widget — light theme" />
+  <img src="docs/images/widget-dark.png" width="360" alt="AI Usage widget — dark theme" />
+</p>
+
+Light and dark widget previews with fictional demo data. Actual quotas depend on your account.
+
 ## What it shows
 
 - Account-wide remaining quotas and reset times, including every group the source returns. Small widgets show fewer rows; all groups are available in the detail screen.

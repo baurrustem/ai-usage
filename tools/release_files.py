@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PATTERNS = (
+    'docs/images/widget-light.png', 'docs/images/widget-dark.png',
     'README*.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'CHANGELOG.md',
     'CONTRIBUTING.md', 'SECURITY.md', 'Makefile', 'install.command', '.gitignore', '.gitattributes',
     'ai_usage/*.py', 'scriptable/*.js', 'tests/*.py', 'tests/*.js',

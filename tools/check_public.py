@@ -4,6 +4,7 @@ This is a focused preflight, not a substitute for reviewing a release or GitHub 
 Only filenames and rule names are printed, never matching values.
 """
 import re
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,8 @@ RULES = {
     'personal macOS path': re.compile(r'/Users/(?!example(?:/|\b)|you(?:/|\b)|runner(?:/|\b))[\w.-]+'),
     'personal email': re.compile(r'\b[A-Za-z0-9._%+-]+@(?:gmail\.com|icloud\.com|outlook\.com|yahoo\.com)\b', re.I),
 }
+# Reviewed synthetic screenshots only; changing an image requires visual review and a new digest.
+REVIEWED_IMAGES = {'docs/images/widget-dark.png': '45f3a0140c928db89d7f67100539e1881aa7ced681f33b86b6250ebb0ddd967c', 'docs/images/widget-light.png': 'e4fb2177d31a67d0d9e35cf9546a225bbb0b0701e807fc7e9e3301d1aaec4057'}
 FORBIDDEN = {'.cache', '.private', 'artifacts', 'dist', 'node_modules', '__pycache__', '.env', 'config.json', 'snapshot.json', 'status.json', 'auth.json', 'credentials.json'}
 
 
@@ -36,6 +39,10 @@ def inspect(root=ROOT, *, check_git=True):
             continue
         if path.is_symlink():
             problems.append((relative, 'unexpected symlink'))
+            continue
+        if str(relative) in REVIEWED_IMAGES:
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != REVIEWED_IMAGES[str(relative)]:
+                problems.append((relative, 'unreviewed screenshot content'))
             continue
         try:
             content = path.read_text(encoding='utf-8')

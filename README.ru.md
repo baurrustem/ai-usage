@@ -6,6 +6,15 @@
 
 Это первая публичная версия. Виджет использовался на настоящем iPhone, но все размеры устройств и версии iOS пока не проверены. Проект независим от Anthropic, OpenAI, Apple и Scriptable.
 
+## Скриншоты
+
+<p>
+  <img src="docs/images/widget-light.png" width="360" alt="AI Usage widget — light theme" />
+  <img src="docs/images/widget-dark.png" width="360" alt="AI Usage widget — dark theme" />
+</p>
+
+Светлая и тёмная темы с вымышленными демонстрационными данными. Набор лимитов зависит от аккаунта.
+
 ## Возможности
 
 - Общие лимиты аккаунта, остаток в процентах, время сброса и история.
