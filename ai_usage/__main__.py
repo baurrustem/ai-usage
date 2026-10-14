@@ -8,12 +8,13 @@ import subprocess
 from pathlib import Path
 
 from .common import atomic_json
-from .config import DEFAULT_STATE, ConfigurationError, read_config, update_config
+from .config import DEFAULT_STATE, ConfigurationError, read_config, update_config, resolve_provider_tools
 from .install import InstallationError
 from .service import collect, configure_logging, sync_scripts
 
 
 def doctor(state, config):
+    config = resolve_provider_tools(config)
     checks = {}
     for key in [p + "Path" for p in config["providers"]] + ["codexbarPath"]:
         binary = config[key]

@@ -7,6 +7,7 @@ import signal
 import sys
 from datetime import date
 
+from . import __version__
 from .common import ProviderError, classify_error, number, percent, timestamp
 
 
@@ -185,7 +186,7 @@ async def fetch_codex(executable: str, fetched_at: str, env: dict) -> dict:
                 return obj["result"]
 
     async def request():
-        await send({"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "ai_usage_widget", "version": "1.0.0"}}})
+        await send({"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "ai_usage_widget", "version": __version__}}})
         await response(1)
         await send({"method": "initialized"})
         await send({"id": 2, "method": "account/rateLimits/read"})

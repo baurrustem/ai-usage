@@ -7,12 +7,32 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ai_usage.common import classify_error
-from ai_usage.config import discover_claude, discover_codex, provider_environment, defaults
+from ai_usage.config import discover_claude, discover_codex, provider_environment, defaults, resolve_provider_tools
 from ai_usage.install import extract_release, InstallationError
 from ai_usage.service import bundle_script, sync_scripts
 
 
 class InstallationTests(unittest.TestCase):
+    def test_missing_bundled_tools_recovered_without_overriding_custom_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tool = root / 'new-cli'; tool.touch()
+            config = defaults(root)
+            config['codexPath'] = '/Applications/ChatGPT.app/Contents/Resources/codex'
+            config['claudePath'] = str(root / 'Library/Application Support/Claude/claude-code/old/claude.app/Contents/MacOS/claude')
+            with patch('ai_usage.config.Path.home', return_value=root), \
+                 patch('ai_usage.config.discover_codex', return_value=str(tool)) as codex, \
+                 patch('ai_usage.config.discover_claude', return_value=str(tool)) as claude:
+                result = resolve_provider_tools(config)
+                self.assertEqual(result['codexPath'], str(tool))
+                self.assertEqual(result['claudePath'], str(tool))
+                self.assertNotEqual(result, config)
+                codex.reset_mock(); claude.reset_mock()
+                config['codexPath'] = '/custom/missing-codex'
+                config['claudePath'] = str(tool)
+                self.assertEqual(resolve_provider_tools(config), config)
+                codex.assert_not_called(); claude.assert_not_called()
+
     def test_newest_available_codex_cli_is_discovered_for_fresh_install(self):
         def run(args, **kwargs):
             version = '0.153.1' if 'ChatGPT.app' in args[0] else '0.122.0'

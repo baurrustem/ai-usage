@@ -61,6 +61,31 @@ class ConfigurationError(ValueError):
     """Safe configuration errors contain field names, never file contents."""
 
 
+def resolve_provider_tools(config: dict) -> dict:
+    """Recover vanished bundled CLIs after app updates; preserve custom paths."""
+    result = copy.deepcopy(config)
+    for provider, discover in (("codex", discover_codex), ("claude", discover_claude)):
+        if provider not in config["providers"]:
+            continue
+        key = provider + "Path"
+        path = Path(config[key])
+        if path.is_file():
+            continue
+        bundled = False
+        if provider == "codex":
+            bundled = path in [root / name / "Contents/Resources/codex"
+                for root in (Path("/Applications"), Path.home() / "Applications")
+                for name in ("ChatGPT.app", "Codex.app")]
+        else:
+            root = Path.home() / "Library/Application Support/Claude/claude-code"
+            bundled = path.is_relative_to(root) and path.parts[-4:] == ("claude.app", "Contents", "MacOS", "claude")
+        if bundled:
+            candidate = discover()
+            if Path(candidate).is_file():
+                result[key] = candidate
+    return result
+
+
 def local_time_zone() -> str:
     candidates = [os.environ.get("TZ", "")]
     try:

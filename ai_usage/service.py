@@ -7,7 +7,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from .common import PROVIDERS, ProviderError, atomic_json, now_iso
-from .config import provider_environment
+from .config import provider_environment, resolve_provider_tools
 from .providers import fetch_activity, fetch_claude, fetch_codex, fetch_tokens
 from .store import Store
 
@@ -23,6 +23,8 @@ def configure_logging(state: Path):
 
 
 async def collect_sources(config, store, *, fetchers=None, clock=now_iso):
+    if fetchers is None:
+        config = resolve_provider_tools(config)
     env = provider_environment(config)
     enabled = config.get("providers", list(PROVIDERS))
     if fetchers is None:

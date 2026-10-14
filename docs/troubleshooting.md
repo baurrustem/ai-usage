@@ -22,6 +22,8 @@ Start with `"$HOME/Library/Application Support/AI Usage/bin/ai-usage" doctor`. F
 
 ## Reading the display
 
+If an application update removes its bundled Claude Code or Codex executable, the collector now searches installed tools again. This recovery applies only to recognized application bundle paths; working paths and custom executable paths are preserved. `doctor` uses the same resolution as collection. A newly found CLI may need a separate sign-in even when the desktop app is signed in. Successful iCloud publication only confirms that the file was written on the Mac, not that the phone has received it.
+
 “Remaining” / “Осталось” is remaining quota; a circle represents 0–100%. The date is the expected reset time, not the age of the data. The single dot by the title summarizes freshness. “Awaiting update” / “Ожидается обновление” means the expected reset passed without a fresh source reading; the widget does not assume a reset has happened.
 
 Tokens include cache reads and can be much larger than newly generated text. They cover available logs on one Mac. Human prompts and sessions exclude tool outputs and supported system/subagent events; provider log formats can change. A missing day is not guaranteed zero usage.

@@ -394,7 +394,10 @@ test('iPhone screenshot regression: full percentages include 0, 100, weekly and 
 
 test('quota captions use consistent rows, Almaty time and the retained window own timestamp', () => {
   const p = sample(NOW).providers[0], w = p.limits[1];
-  assert.deepEqual(U.quotaCaptionLines(w,p,NOW,'Asia/Almaty'), ['Сброс', '10 сент., 15:00']);
+  assert.deepEqual(U.quotaCaptionLines(w,p,NOW,'Asia/Almaty'), ['10 сент., 15:00']);
+  assert.deepEqual(U.forLanguage('en').quotaCaptionLines(w,p,NOW,'Asia/Almaty'), ['10 Sept, 15:00']);
+  assert.deepEqual(U.forLanguage('en').quotaCaptionLines(w,{...p,id:'codex'},NOW,'Asia/Almaty'), ['Resets','10 Sept, 15:00']);
+  assert.deepEqual(U.forLanguage('en').quotaCaptionLines({...w,windowMinutes:300},{...p,id:'codex'},NOW,'Asia/Almaty'), ['10 Sept, 15:00']);
   assert.deepEqual(U.quotaCaptionLines({...w,title:'Fable',resetsAt:null},p,NOW,'Asia/Almaty'), ['Время сброса','Не получено']);
   assert.deepEqual(U.quotaCaptionLines({...w,title:'Fable',usedPercent:null,resetsAt:null},p,NOW,'Asia/Almaty'), ['Нет данных','о лимите Fable']);
   const retained = {...w,retained:true,observedAt:new Date(NOW-17*60000).toISOString()};
@@ -451,7 +454,7 @@ test('reset captions have explicit top and bottom margins and share centered sta
   const flatten = e => [e, ...e.children.flatMap(flatten)];
   const widget = U.createWidget(s, U.parseOptions('codex'), 'large', {}, NOW);
   const images = flatten(widget).filter(e => e.image);
-  const captions = images.filter(e => e.image.drawn.length === 2 && e.image.drawn[0].text === 'Сброс');
+  const captions = images.filter(e => e.imageSize.height === 30 && e.image.drawn.length >= 1);
   assert.equal(captions.length, 5);
   for (const image of captions) {
     assert.equal(image.imageSize.height, 30);

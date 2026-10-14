@@ -669,7 +669,11 @@ const AIUsage = (() => {
     function quotaCaptionLines(window, provider, now, timeZone) {
       if (resetDue(window, provider.limitsState, now)) return [tr("Ожидается"), tr("обновление")];
       if (window.retained) return [tr("Данные устарели"), readingTime(window.observedAt, now, timeZone)];
-      if (validDate(window.resetsAt)) return [tr("Сброс"), readingTime(window.resetsAt, now, timeZone)];
+      if (validDate(window.resetsAt)) {
+        const at = readingTime(window.resetsAt, now, timeZone);
+        const dateOnly = provider.id === "claude" || (provider.id === "codex" && window.windowMinutes === 300);
+        return dateOnly ? [at] : [tr("Сброс"), at];
+      }
       if (finite(window.usedPercent)) return [tr("Время сброса"), tr("Не получено")];
       return [tr("Нет данных"), window.title === "Fable" ? tr("о лимите Fable") : tr("о лимите")];
     }
