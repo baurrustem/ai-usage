@@ -21,6 +21,8 @@ Light and dark widget previews with fictional demo data. Actual quotas depend on
 - Available Codex reset credits, when supported by the installed Codex app-server. The collector never redeems them.
 - Tokens today / 7 / 30 days, human prompts, unique sessions and active days from **this Mac's logs**. Tokens include cache reads; they are not a bill or an account-wide token allowance.
 - History, stale/error indicators, light/dark themes, home-screen and lock-screen widgets.
+- **Pace forecast:** at the pace of the last hour, *runs out ~20:24* appears under a limit when it would run out before its reset within the next 6 hours.
+- **Notifications on the iPhone:** limit reset (when 80%+ was used), pace warning, a source that stopped answering, and a Mac that stopped sending data. Turn them off with `configure --notifications off`.
 
 Data is collected every five minutes while the Mac is awake. Widget refresh is requested after 15 minutes; iCloud and iOS control actual delivery and refresh. Quota percentages are never converted into tokens.
 
@@ -115,7 +117,7 @@ After uninstalling, remove the retained state folder and the two Scriptable file
 
 Authorization remains with the providers' tools on the Mac. The collector reads local session logs to count activity but exports no prompt text, project paths, raw session IDs, email addresses, or auth tokens. The iCloud snapshot contains quota readings, daily counts, and hashed session IDs used to deduplicate sessions. These are still personal usage data: do not publish snapshots, databases, live previews, or screenshots without reviewing them. See [privacy and architecture](docs/architecture.md).
 
-History is retained locally for 90 days; up to 30 days are synchronized to the phone. Token/activity history is imported from available local logs. Claude Max token totals across all devices are not available here. Other APIs, cost estimates, notifications, multiple accounts/Macs are outside this release.
+History is retained locally for 90 days; up to 30 days are synchronized to the phone. Token/activity history is imported from available local logs. Claude Max token totals across all devices are not available here. Other APIs, cost estimates, multiple accounts/Macs are outside this release. The forecast is a straight line through the last hour of readings, not a model of your habits; see [verification](docs/verification.md) for how it was checked.
 
 ## Development
 

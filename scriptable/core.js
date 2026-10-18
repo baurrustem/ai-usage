@@ -132,7 +132,19 @@ const AIUsage = (() => {
   "Сервис не вернул числовые показатели": "No numeric readings returned",
   "Ошибка подключения на Mac": "Connection error on Mac",
   "Требуется CodexBar CLI 0.56.7": "CodexBar CLI 0.56.7 required",
-  "Источник Claude CLI недоступен; проверь вход на Mac": "Claude CLI unavailable; check sign-in on Mac"
+  "Источник Claude CLI недоступен; проверь вход на Mac": "Claude CLI unavailable; check sign-in on Mac",
+  "При текущем темпе кончится ~": "At this pace it runs out ~",
+  "При текущем темпе хватит до сброса": "At this pace it lasts until the reset",
+  "кончится ~": "runs out ~",
+  ": лимит обновился": ": limit reset",
+  "Можно продолжать работу": "You can get back to work",
+  "Темп последнего часа. ": "Pace of the last hour. ",
+  "AI Usage: данные не приходят с Mac": "AI Usage: no data from the Mac",
+  "Последнее обновление ": "Last update ",
+  ". Проверь, что Mac включён, и запусти ai-usage doctor": ". Check that the Mac is on and run ai-usage doctor",
+  ": лимиты не обновляются": ": limits are not updating",
+  "Последние лимиты ": "Last limits ",
+  ". Запусти на Mac: ai-usage doctor": ". Run on the Mac: ai-usage doctor"
 };
   const instances = {};
   function forLanguage(language) {
@@ -286,6 +298,73 @@ const AIUsage = (() => {
       return tr("Сброс · ") + new Intl.DateTimeFormat(locale, { timeZone, ...format }).format(date);
     }
 
+    function forecastText(window, state, now = Date.now(), timeZone = "UTC") {
+      const pace = window && window.forecast;
+      if (!pace || window.retained || stale(limitState(window, state), now) || resetDue(window, state, now)) return null;
+      if (validDate(pace.exhaustsAt)) {
+        const at = Date.parse(pace.exhaustsAt);
+        if (at <= now || (validDate(window.resetsAt) && at >= Date.parse(window.resetsAt))) return null;
+        const sameDay = dayKey(now, timeZone) === dayKey(at, timeZone);
+        const format = sameDay ? { hour: "2-digit", minute: "2-digit" } : { weekday: "short", hour: "2-digit", minute: "2-digit" };
+        const time = new Intl.DateTimeFormat(locale, { timeZone, ...format }).format(new Date(at));
+        return { warn: true, at: pace.exhaustsAt, text: tr("При текущем темпе кончится ~") + time, short: tr("кончится ~") + time };
+      }
+      return finite(pace.atResetPercent) ? { warn: false, at: null, text: tr("При текущем темпе хватит до сброса"), short: "" } : null;
+    }
+
+    function plannedNotifications(snapshot, now = Date.now()) {
+      if (!snapshot || (snapshot.notifications && snapshot.notifications.enabled === false)) return [];
+      const out = [], slot = at => Math.round(Date.parse(at) / 600000);
+      if (now - Date.parse(snapshot.generatedAt) > 86400000) {
+        return [{ id: "stale:" + snapshot.generatedAt, kind: "stale", at: null, title: tr("AI Usage: данные не приходят с Mac"),
+          body: tr("Последнее обновление ") + ageText(snapshot.generatedAt, now) + tr(". Проверь, что Mac включён, и запусти ai-usage doctor") }];
+      }
+      const fresh = now - Date.parse(snapshot.generatedAt) <= 3600000;
+      for (const provider of displaySnapshot(snapshot).providers) {
+        const state = provider.limitsState;
+        if (fresh && (!validDate(state.fetchedAt) || now - Date.parse(state.fetchedAt) > 6 * 3600000)) {
+          out.push({ id: "source:" + provider.id + ":" + (state.fetchedAt || "none"), kind: "source", at: null,
+            title: providerName(provider) + tr(": лимиты не обновляются"),
+            body: tr("Последние лимиты ") + ageText(state.fetchedAt, now) + " · " + sourceMessage(state) + tr(". Запусти на Mac: ai-usage doctor") });
+          continue;
+        }
+        if (stale(state, now)) continue;
+        for (const w of provider.limits) {
+          if (!validDate(w.resetsAt) || Date.parse(w.resetsAt) <= now) continue;
+          const label = providerName(provider) + " · " + limitLabel(w, provider);
+          if (clamp(w.usedPercent) !== null && clamp(w.usedPercent) >= 80)
+            out.push({ id: "reset:" + provider.id + ":" + w.id + ":" + slot(w.resetsAt), kind: "reset", at: w.resetsAt,
+              title: label + tr(": лимит обновился"), body: tr("Можно продолжать работу") });
+          const pace = forecastText(w, state, now, snapshot.timeZone);
+          if (pace && pace.warn && Date.parse(pace.at) - now <= 3 * 3600000)
+            out.push({ id: "pace:" + provider.id + ":" + w.id + ":" + slot(w.resetsAt), kind: "pace", at: null,
+              title: label + ": " + pace.short, body: tr("Темп последнего часа. ") + widgetResetText(w, state, now, snapshot.timeZone) });
+        }
+      }
+      return out;
+    }
+
+    async function deliverNotifications(snapshot, now = Date.now()) {
+      if (typeof Notification === "undefined") return 0;
+      const planned = plannedNotifications(snapshot, now);
+      if (!planned.length) return 0;
+      const files = FileManager.local(), path = files.joinPath(files.documentsDirectory(), "ai-usage-notified.json");
+      let sent = [];
+      try { if (files.fileExists(path)) sent = JSON.parse(files.readString(path)); } catch (_) { sent = []; }
+      if (!Array.isArray(sent)) sent = [];
+      let count = 0;
+      for (const item of planned) {
+        if (sent.includes(item.id)) continue;
+        const note = new Notification();
+        note.identifier = item.id; note.threadIdentifier = "ai-usage"; note.title = item.title; note.body = item.body;
+        if (item.at) note.setTriggerDate(new Date(item.at));
+        await note.schedule();
+        sent.push(item.id); count++;
+      }
+      files.writeString(path, JSON.stringify(sent.slice(-200)));
+      return count;
+    }
+
     function displayLimits(provider) {
       const tag = w => [w.id, w.groupId, w.groupName, w.title].join(" ").toLowerCase();
       const preferences = provider.display || {};
@@ -402,7 +481,8 @@ const AIUsage = (() => {
       const dark = Device.isUsingDarkAppearance();
       return { background: new Color(dark ? "171717" : "FFFFFF"), text: new Color(dark ? "F2F2F2" : "202020"),
         muted: new Color(dark ? "B8B8B8" : "5F5F5F"), track: new Color(dark ? "303030" : "EBEBEB"),
-        claude: new Color(dark ? "E1A183" : "AE593D"), codex: new Color(dark ? "6AD2BC" : "197D6B") };
+        claude: new Color(dark ? "E1A183" : "AE593D"), codex: new Color(dark ? "6AD2BC" : "197D6B"),
+        warn: new Color(dark ? "E8A25C" : "B45309") };
     }
 
     function text(parent, value, size, color, weight = "regular") {
@@ -512,7 +592,9 @@ const AIUsage = (() => {
         row.addSpacer();
         const value = text(row, pct(window, state, now), 18, color, "bold"); value.minimumScaleFactor = 1;
         parent.addSpacer(1);
-        text(parent, widgetResetText(window, state, now, timeZone).replace(tr("Сброс · "), "↻ "), 9, colors.muted);
+        const pace = forecastText(window, state, now, timeZone);
+        text(parent, widgetResetText(window, state, now, timeZone).replace(tr("Сброс · "), "↻ ") + (pace && pace.warn ? " · " + pace.short : ""), 9,
+          pace && pace.warn ? colors.warn : colors.muted);
         parent.addSpacer(3);
       }
       if (!windows.length) {
@@ -682,8 +764,11 @@ const AIUsage = (() => {
       // The previous 24 pt VStack cut the tops of glyphs on the phone. Render both
       // lines with explicit text rectangles and safe top/bottom margins in a 30 pt canvas.
       const height = 30, ctx = new DrawContext(); ctx.size = new Size(width, height); ctx.opaque = false; ctx.respectScreenScale = true;
-      quotaCaptionLines(window, provider, now, timeZone).forEach((line, i) => {
-        canvasText(ctx, line, new Rect(2, 2 + i * 14, width - 4, 13), TYPE.caption, colors.muted);
+      let lines = quotaCaptionLines(window, provider, now, timeZone).map(text => ({ text, color: colors.muted }));
+      const pace = forecastText(window, provider.limitsState, now, timeZone);
+      if (pace && pace.warn) lines = [lines.length > 1 ? { text: "↻ " + lines[1].text, color: colors.muted } : lines[0], { text: pace.short, color: colors.warn }];
+      lines.forEach((line, i) => {
+        canvasText(ctx, line.text, new Rect(2, 2 + i * 14, width - 4, 13), TYPE.caption, line.color);
       });
       canvasImage(parent, ctx, width, height);
     }
@@ -891,7 +976,8 @@ const AIUsage = (() => {
           return '<button class="quota-row" data-owner="' + esc(provider.id) + '" data-limit="' + esc(w.id) + '" aria-label="' + esc(limitLabel(w, provider) + tr(": осталось ") + pct(w, state, now) + tr(". Открыть историю")) + '">' +
             '<span class="quota-label">' + esc(limitLabel(w, provider)) + '</span><strong>' + esc(pct(w, state, now)) + '</strong>' +
             '<span class="track" aria-hidden="true"><i style="width:' + (value === null ? 0 : value) + '%"></i></span>' +
-            '<span class="reset">' + esc(widgetResetText(w, state, now, data.timeZone)) + '</span></button>';
+            '<span class="reset">' + esc(widgetResetText(w, state, now, data.timeZone)) + '</span>' +
+            (function () { const pace = forecastText(w, state, now, data.timeZone); return pace ? '<span class="reset' + (pace.warn ? ' warn' : '') + '">' + esc(pace.text) + '</span>' : ''; })() + '</button>';
         }).join('');
         let resets = '';
         if (provider.id === 'codex') {
@@ -998,17 +1084,17 @@ const AIUsage = (() => {
       const selectedLanguage = (overrideLanguage || (snapshot && snapshot.language) || (snapshot ? "ru" : "en")) === "en" ? "en" : "ru";
       if (selectedLanguage !== language) return forLanguage(selectedLanguage).dashboardHTML(snapshot, loadInfo, provider, selectedLanguage);
       snapshot = displaySnapshot(snapshot);
-      const helpers = { tr, sourceMessage, esc, validDate, finite, clamp, ageText, stale, limitState, resetDue, remaining, pct, resetCreditInfo, windowLabel, resetText, widgetResetText, selectedLimits, displayLimits, displaySnapshot, providerName, limitLabel, nativeLimitLabel, overviewHTML, dayKey, tokenTotal, tokenBreakdown, activityTotal, compactNumber, historySegments, chartSVG };
+      const helpers = { tr, sourceMessage, esc, validDate, finite, clamp, ageText, stale, limitState, resetDue, remaining, pct, resetCreditInfo, windowLabel, resetText, widgetResetText, forecastText, selectedLimits, displayLimits, displaySnapshot, providerName, limitLabel, nativeLimitLabel, overviewHTML, dayKey, tokenTotal, tokenBreakdown, activityTotal, compactNumber, historySegments, chartSVG };
       const declarations = Object.entries(helpers).map(([name, fn]) => 'const ' + name + '=' + fn.toString() + ';').join('\n');
       const safeJSON = value => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
       const css = `
         :root{--bg:#fff;--text:#222;--muted:#767676;--line:#ededed;--surface:#f6f6f6;--claude:#b2765e;--codex:#398577;--accent:var(--codex);font-family:-apple-system,BlinkMacSystemFont,sans-serif;color-scheme:light dark}
         *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-size:13px;-webkit-font-smoothing:antialiased}#root{max-width:560px;margin:auto;padding:28px 22px max(30px,env(safe-area-inset-bottom))}header{display:flex;align-items:center;justify-content:space-between;margin-bottom:26px}.app-name{font-size:11px;color:var(--muted)}h1{font-size:23px;letter-spacing:-.65px;font-weight:600;margin:7px 0 0}h2{font-size:14px;font-weight:600;margin:0;display:flex;align-items:center;gap:8px}h3{font-size:12px;font-weight:500;margin:0 0 13px}.sync-label{font-size:11px;color:var(--muted)}.overview-label{display:flex;justify-content:space-between;color:var(--muted);font-size:10px;margin-bottom:10px}.provider-section{border:1px solid var(--line);border-radius:12px;padding:17px 16px 2px;margin-bottom:14px}.provider-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px}.mark{width:6px;height:6px;border-radius:50%;background:var(--accent)}.source-age{color:var(--muted);font-size:10px;white-space:nowrap}.source-note{font-size:11px;color:#a56a39;margin:10px 0 0;line-height:1.5}.unavailable{color:var(--muted);font-size:12px;margin:18px 0}
-        button,select{font:inherit;color:inherit}button{cursor:pointer;-webkit-tap-highlight-color:transparent}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.quota-row{border:0;border-bottom:1px solid var(--line);background:transparent;width:100%;padding:14px 0 13px;text-align:left;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 14px;align-items:baseline}.quota-row:last-child{border-bottom:0}.quota-row:active{opacity:.65}.quota-label{font-size:12px;line-height:1.3;overflow-wrap:anywhere}.quota-row strong{font-size:19px;font-weight:500;letter-spacing:-.5px;font-variant-numeric:tabular-nums}.track{grid-column:1/-1;height:3px;background:var(--line);display:block;border-radius:2px;overflow:hidden}.track i{display:block;height:100%;background:var(--accent);border-radius:2px}.reset{grid-column:1/-1;color:var(--muted);font-size:10px;line-height:1.3}
+        button,select{font:inherit;color:inherit}button{cursor:pointer;-webkit-tap-highlight-color:transparent}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.quota-row{border:0;border-bottom:1px solid var(--line);background:transparent;width:100%;padding:14px 0 13px;text-align:left;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px 14px;align-items:baseline}.quota-row:last-child{border-bottom:0}.quota-row:active{opacity:.65}.quota-label{font-size:12px;line-height:1.3;overflow-wrap:anywhere}.quota-row strong{font-size:19px;font-weight:500;letter-spacing:-.5px;font-variant-numeric:tabular-nums}.track{grid-column:1/-1;height:3px;background:var(--line);display:block;border-radius:2px;overflow:hidden}.track i{display:block;height:100%;background:var(--accent);border-radius:2px}.reset{grid-column:1/-1;color:var(--muted);font-size:10px;line-height:1.3}.reset.warn{color:#b45309}
         .activity-strip{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:10px;padding:12px 0}.activity-strip b{color:var(--accent);font-weight:600;margin-left:4px}.activity-table{border-collapse:collapse;width:100%;font-size:11px;font-variant-numeric:tabular-nums}.activity-table td,.activity-table th{padding:10px 3px;border-bottom:1px solid var(--line);text-align:right}.activity-table td:first-child,.activity-table th:first-child{text-align:left}.activity-table th{font-weight:400;color:var(--muted)}.token-breakdown{margin-top:22px}
         .reset-credits{display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px 14px;padding:14px 0;font-size:12px}.reset-credits strong{font-size:20px;font-weight:600;color:var(--codex);font-variant-numeric:tabular-nums}.reset-credits small{grid-column:1/-1;color:var(--muted);font-size:10px;line-height:1.5}
         details{border-bottom:1px solid var(--line);scroll-margin-top:18px}summary{cursor:pointer;display:flex;align-items:center;justify-content:space-between;list-style:none;min-height:52px;font-size:12px;font-weight:500}summary::-webkit-details-marker{display:none}.chevron{color:var(--muted);font-size:16px;transition:transform .15s}details[open]>summary .chevron{transform:rotate(180deg)}.details-content{padding:4px 0 21px}.filters{display:flex;gap:12px;align-items:center;margin-bottom:14px}.filters>select{flex:1;width:40%}select{background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:9px 8px;font-size:11px;min-width:0;width:100%;min-height:36px}.segmented,.ranges{display:flex;gap:2px}.segmented{border:1px solid var(--line);border-radius:6px;padding:2px}.segmented button,.ranges button{background:transparent;border:0;padding:8px 12px;border-radius:4px;font-size:11px;color:var(--muted);min-height:32px}button[aria-pressed=true]{background:var(--surface);color:var(--text)}.select-label{display:block;font-size:10px;color:var(--muted);margin:0 0 6px}.graph-label{font-size:10px;color:var(--muted);margin:19px 0 9px}.graph{color:var(--accent)}svg{width:100%;height:auto;display:block;min-height:95px}.ranges{justify-content:center;margin-top:10px}.note{color:var(--muted);font-size:10px;line-height:1.6;margin:13px 0 0}.empty{padding:30px 0;text-align:center;color:var(--muted);font-size:12px;line-height:1.6}.token-summary{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}.token-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.token-cards span{display:block;font-size:10px;color:var(--muted)}.token-cards b{display:block;font-size:20px;font-weight:500;letter-spacing:-.5px;margin:7px 0}.token-cards small{font-size:9px;color:var(--muted)}.connection-provider{padding:12px 0 18px;border-bottom:1px solid var(--line);margin-bottom:8px}.status-row{display:flex;justify-content:space-between;gap:16px;padding-top:11px;font-size:11px;line-height:1.5}.status-row span{color:var(--muted);flex-shrink:0}.status-row b{font-weight:400;text-align:right}.bars{height:120px;display:flex;align-items:end;gap:4px;border-bottom:1px solid var(--line)}.bars>div{flex:1;display:flex;justify-content:center;align-items:end;height:100%}.bars i{background:var(--accent);width:100%;max-width:40px;border-radius:2px 2px 0 0}.bars i.missing{background:var(--line)}.setup{border-top:1px solid var(--line);padding-top:20px}ol{padding-left:18px;line-height:1.7;color:var(--muted)}li{padding:5px 0}.sr-only{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
-        @media(prefers-color-scheme:dark){:root{--bg:#171717;--text:#eee;--muted:#999;--line:#303030;--surface:#282828;--claude:#cb9b84;--codex:#79ae9f}.source-note{color:#c79b72}}
+        @media(prefers-color-scheme:dark){:root{--bg:#171717;--text:#eee;--muted:#999;--line:#303030;--surface:#282828;--claude:#cb9b84;--codex:#79ae9f}.source-note{color:#c79b72}.reset.warn{color:#e8a25c}}
         @media(max-width:350px){#root{padding-left:16px;padding-right:16px}.provider-section{padding-left:13px;padding-right:13px}.filters{gap:6px}.segmented button{padding:8px}}
       `;
       return '<!doctype html><html lang="' + language + '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark"><title>AI Usage</title><style>' + css + '</style></head><body><main id="root"></main><script>' + 'const language=' + safeJSON(language) + ';const locale=' + safeJSON(locale) + ';const ENGLISH=' + safeJSON(ENGLISH) + ';' + declarations + '\nconst RANGE_MS=' + safeJSON(RANGE_MS) + ';window.AIUsageHelpers={' + Object.keys(helpers).join(',') + '};(' + dashboardRuntime.toString() + ')(' + safeJSON(snapshot) + ',' + safeJSON(loadInfo) + ',' + safeJSON(provider) + ');</script></body></html>';
@@ -1028,11 +1114,13 @@ const AIUsage = (() => {
         await view.loadHTML(dashboardHTML(info.snapshot, { cached: info.cached, reason: info.reason }, options.provider, options.language));
         await view.present(false);
       }
+      // Notifications must never break the widget or the detail screen.
+      try { await deliverNotifications(info.snapshot); } catch (_) {}
       Script.complete();
     }
 
     return { language, forLanguage, tr, sourceMessage, validateSnapshot, parseOptions, ageText, stale, limitState, resetDue, remaining, pct, windowLabel, resetText, widgetResetText,
-      resetCreditInfo, readingTime, quotaCaptionLines, widgetFreshness, selectedLimits, displayLimits, displaySnapshot, providerName, limitLabel, nativeLimitLabel, overviewHTML, dayKey, tokenTotal, tokenBreakdown, activityTotal, compactNumber, historySegments, chartSVG, createWidget, loadSnapshot, dashboardHTML, run };
+      resetCreditInfo, readingTime, quotaCaptionLines, widgetFreshness, forecastText, plannedNotifications, deliverNotifications, selectedLimits, displayLimits, displaySnapshot, providerName, limitLabel, nativeLimitLabel, overviewHTML, dayKey, tokenTotal, tokenBreakdown, activityTotal, compactNumber, historySegments, chartSVG, createWidget, loadSnapshot, dashboardHTML, run };
   }
   return forLanguage("ru");
 })();

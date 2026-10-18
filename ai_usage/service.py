@@ -113,7 +113,8 @@ def collect(state: Path, config: dict) -> dict:
             complete = asyncio.run(collect_sources(config, store))
             now = now_iso()
             store.prune(now)
-            snapshot = store.snapshot(now, config["timeZone"], config.get("providers"), config.get("display"), config["language"])
+            snapshot = store.snapshot(now, config["timeZone"], config.get("providers"), config.get("display"), config["language"],
+                                      notifications=config.get("notifications", True))
             scriptable = Path(config["scriptableDirectory"]).expanduser()
             script_source = Path(__file__).resolve().parent.parent / "scriptable"
             try:

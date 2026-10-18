@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from .common import PROVIDERS, UTC, ProviderError, epoch, iso
+from .forecast import forecast, same_reset
 
 
 def compact_history(rows: list[dict], now: str) -> list[dict]:
@@ -30,7 +31,7 @@ def compact_history(rows: list[dict], now: str) -> list[dict]:
         age = current - at
         width = 300 if age <= 86400 else (3600 if age <= 7 * 86400 else 21600)
         boundary = previous is None or at - epoch(previous["at"]) > 900 or (
-            point["resetsAt"] != previous["resetsAt"] or point["usedPercent"] < previous["usedPercent"])
+            not same_reset(point["resetsAt"], previous["resetsAt"]) or point["usedPercent"] < previous["usedPercent"])
         key = (width, int(at // width))
         if boundary or key != bucket_key:
             flush()
@@ -106,7 +107,7 @@ class Store:
             self.db.execute("DELETE FROM token_days WHERE day < ?", (cutoff[:10],))
             self.db.execute("DELETE FROM activity_days WHERE day < ?", (cutoff[:10],))
 
-    def snapshot(self, now: str, time_zone: str, enabled=None, display=None, language="en") -> dict:
+    def snapshot(self, now: str, time_zone: str, enabled=None, display=None, language="en", notifications=True) -> dict:
         providers = []
         cutoff = iso(datetime.fromtimestamp(epoch(now), UTC) - timedelta(days=30))
         for provider, name in PROVIDERS.items():
@@ -137,6 +138,10 @@ class Store:
             for row in self.db.execute("SELECT * FROM quota_points WHERE provider=? AND at>=? ORDER BY at", (provider, cutoff)):
                 by_limit[row["limit_id"]].append(dict(row))
             item["limitHistory"] = [{"id": key, "points": compact_history(rows, now)} for key, rows in by_limit.items()]
+            for window in item["limits"]:
+                pace = forecast(by_limit.get(window.get("id"), []), window, now) if item["limitsState"]["state"] == "ok" else None
+                if pace:
+                    window["forecast"] = pace
             providers.append(item)
         return {"schemaVersion": 1, "generatedAt": now, "timeZone": time_zone, "language": language, "retentionDays": 90,
-                "staleAfterSeconds": 900, "providers": providers}
+                "staleAfterSeconds": 900, "notifications": {"enabled": bool(notifications)}, "providers": providers}

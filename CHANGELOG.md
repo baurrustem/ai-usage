@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.0 — 2026-10-18
+
+- **Pace forecast.** Each limit gets a straight-line forecast from the readings of the last hour. If the limit would run out before its reset within the next 6 hours, the widget shows *runs out ~20:24* in amber and the detail screen explains it. Further run-outs are not reported: one hour of work says little about tomorrow.
+- **iPhone notifications** (on by default; `configure --notifications off`):
+  - *limit reset*, scheduled for the reset time when 80% or more of a limit is used;
+  - *pace warning*, once per window, when the forecast says the limit runs out within 3 hours;
+  - *limits are not updating*, when the Mac is sending data but a source has not answered for 6 hours, with the reason and `ai-usage doctor`;
+  - *no data from the Mac*, after 24 hours without a snapshot.
+
+  Each notification fires once. Notification failures never break the widget.
+- **Fix:** providers can report the same reset a minute apart. History charts no longer break at that jitter.
+- `tools/backtest_forecast.py` replays the forecast over your own local history and prints aggregate accuracy only.
+
+Update by extracting the new ZIP and running `bash install.command` again. Settings and history are retained; notifications start after the widget or the script runs once.
+
 ## 1.0.1 — 2026-10-14
 
 - Recover missing bundled Claude Code and Codex executables after application updates. Existing working and custom paths are preserved.

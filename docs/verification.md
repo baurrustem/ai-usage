@@ -1,5 +1,23 @@
 # Release preparation verification
 
+## Pace forecast — 2026-10-18 (1.1.0)
+
+The forecast was replayed with `tools/backtest_forecast.py` over one maintainer's local history: about six weeks of readings every ~5 minutes, with a month-long gap when the 1.0.0 collector lost its CLI paths (fixed in 1.0.1). At every reading of every window that was observed until it filled up or reset, the forecast was compared with what actually happened.
+
+| Limit | Windows used | Ran out | Correct warnings | False alarms | Median error | Median warning ahead |
+|---|---|---|---|---|---|---|
+| Claude, 5 hours | 41 | 1 | 28 | 0 | 15 min | 246 min |
+| Codex, weekly | 74 | 6 | 118 | 0 | 26 min | 176 min |
+
+What this does not show:
+- It is one person's history, and only 7 windows ran out, so "zero false alarms" is a small sample.
+- The Claude weekly limit never ran out in this history, so its warnings are untested.
+- Readings where the forecast stayed quiet before a run-out are counted as missed (150 for Codex). They happen early in a window, before the last hour shows the pace.
+
+The run-out time is reported only within 6 hours. With a 24-hour pace instead, the Codex error grew to about 14 hours, so 1.1.0 keeps the last hour and the 6-hour limit.
+
+Notifications were tested with a mocked Scriptable `Notification` and `FileManager`: scheduling, a one-minute reset jitter, a broken local log, and the switch-off setting. Delivery on a real iPhone remains a manual check.
+
 ## Publication recheck — 2026-09-09
 
 The current source is ready for an early community publication, with the manual acceptance items below still open. No blocking failure was found in the local checks. This is not a claim of a completed GitHub release or compatibility certification.

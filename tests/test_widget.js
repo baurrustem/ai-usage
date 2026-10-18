@@ -590,3 +590,95 @@ test('English detail screen executes translated markup including source errors a
   assert(russian.body.includes('Лимиты подписок'));
   assert(russian.body.includes('Требуется повторный вход на Mac'));
 });
+
+// ---------------------------------------------------------------- 1.1: pace forecast and notifications
+
+function withPace(snapshot, exhaustsInMinutes) {
+  const w = snapshot.providers[0].limits[0];
+  w.usedPercent = 70;
+  w.forecast = exhaustsInMinutes == null
+    ? { basis: 'last_hour', ratePerHour: 2, atResetPercent: 74, exhaustsAt: null }
+    : { basis: 'last_hour', ratePerHour: 30, atResetPercent: 100, exhaustsAt: new Date(NOW + exhaustsInMinutes * 60000).toISOString() };
+  return snapshot;
+}
+
+test('forecast line warns only before the reset and stays quiet on stale data', () => {
+  const s = withPace(sample(NOW), 60), p = s.providers[0], w = p.limits[0];
+  const pace = U.forecastText(w, p.limitsState, NOW, 'Asia/Almaty');
+  assert.equal(pace.warn, true);
+  assert.match(pace.text, /^При текущем темпе кончится ~\d\d:\d\d$/);
+  assert.equal(U.forLanguage('en').forecastText(w, p.limitsState, NOW, 'Asia/Almaty').short.startsWith('runs out ~'), true);
+  assert.equal(U.forecastText(w, { ...p.limitsState, state: 'error' }, NOW), null);
+  w.forecast.exhaustsAt = new Date(Date.parse(w.resetsAt) + 60000).toISOString();     // after the reset: nothing to warn about
+  assert.equal(U.forecastText(w, p.limitsState, NOW), null);
+  const calm = withPace(sample(NOW), null).providers[0];
+  assert.equal(U.forecastText(calm.limits[0], calm.limitsState, NOW).text, 'При текущем темпе хватит до сброса');
+  assert.equal(U.forecastText(sample(NOW).providers[0].limits[0], p.limitsState, NOW), null);   // no forecast field
+});
+
+test('notifications: reset when the limit is nearly used, pace warning within 3 hours', () => {
+  const kinds = s => U.plannedNotifications(s, NOW).map(n => n.kind).sort();
+  assert.deepEqual(kinds(sample(NOW)), []);                       // 32% used, no forecast
+  const s = withPace(sample(NOW), 60);
+  s.providers[0].limits[0].usedPercent = 85;
+  const planned = U.plannedNotifications(s, NOW);
+  assert.deepEqual(planned.map(n => n.kind).sort(), ['pace', 'reset']);
+  const reset = planned.find(n => n.kind === 'reset');
+  assert.equal(reset.at, s.providers[0].limits[0].resetsAt);
+  assert.match(reset.title, /^Claude Code · .+: лимит обновился$/);
+  assert.deepEqual(kinds(withPace(sample(NOW), 300)), []);        // 5 hours away: no alarm yet
+  s.notifications = { enabled: false };
+  assert.deepEqual(U.plannedNotifications(s, NOW), []);
+});
+
+test('notification ids survive a one-minute reset jitter', () => {
+  const a = withPace(sample(NOW), 60), b = withPace(sample(NOW), 60);
+  a.providers[0].limits[0].usedPercent = b.providers[0].limits[0].usedPercent = 90;
+  b.providers[0].limits[0].resetsAt = new Date(Date.parse(a.providers[0].limits[0].resetsAt) - 60000).toISOString();
+  const ids = s => U.plannedNotifications(s, NOW).map(n => n.id).sort();
+  assert.deepEqual(ids(a), ids(b));
+});
+
+test('notifications: a silent source and a silent Mac are reported once', () => {
+  const s = sample(NOW);
+  s.generatedAt = new Date(NOW - 120000).toISOString();
+  s.providers[0].limitsState = { ...s.providers[0].limitsState, state: 'error', code: 'cli_unavailable', fetchedAt: new Date(NOW - 7 * 3600000).toISOString() };
+  const source = U.plannedNotifications(s, NOW).filter(n => n.kind === 'source');
+  assert.equal(source.length, 1);
+  assert.match(source[0].body, /Источник Claude CLI недоступен.*ai-usage doctor/);
+  const old = sample(NOW);
+  old.generatedAt = new Date(NOW - 2 * 86400000).toISOString();
+  const stale = U.plannedNotifications(old, NOW);
+  assert.deepEqual(stale.map(n => n.kind), ['stale']);
+  assert.match(U.forLanguage('en').plannedNotifications(old, NOW)[0].body, /ai-usage doctor/);
+});
+
+test('delivery schedules each notification once and survives a broken log', async () => {
+  const scheduled = [], files = {};
+  global.Notification = class { setTriggerDate(d) { this.trigger = d; } async schedule() { scheduled.push(this); } };
+  global.FileManager = { local: () => ({ documentsDirectory: () => '/docs', joinPath: (a, b) => a + '/' + b,
+    fileExists: p => p in files, readString: p => files[p], writeString: (p, v) => { files[p] = v; } }) };
+  try {
+    const s = withPace(sample(NOW), 60);
+    s.providers[0].limits[0].usedPercent = 85;
+    assert.equal(await U.deliverNotifications(s, NOW), 2);
+    assert.equal(await U.deliverNotifications(s, NOW), 0);
+    assert.ok(scheduled.find(n => n.trigger instanceof Date));
+    files['/docs/ai-usage-notified.json'] = '{broken';
+    assert.equal(await U.deliverNotifications(s, NOW), 2);
+  } finally {
+    delete global.Notification; delete global.FileManager;
+  }
+});
+
+test('detail screen shows the forecast line', () => {
+  const T = Date.now();                                            // the detail screen renders with the real clock
+  const s = require('./fixture.js').completeSample(T), w = s.providers[0].limits[0];
+  w.usedPercent = 70;
+  w.forecast = { basis: 'last_hour', ratePerHour: 30, atResetPercent: 100, exhaustsAt: new Date(T + 3600000).toISOString() };
+  const page = renderDashboardForTest(s, 'ru');
+  assert(page.body.includes('class="reset warn"'));
+  assert(page.body.includes('При текущем темпе кончится'));
+  s.language = 'en';
+  assert(renderDashboardForTest(s, 'en').body.includes('At this pace it runs out'));
+});

@@ -105,7 +105,7 @@ def local_time_zone() -> str:
 
 def defaults(state: Path) -> dict:
     return {"configVersion": 1, "providers": ["claude", "codex"], "timeZone": local_time_zone(), "language": "en",
-            "display": {}, "scriptableDirectory": str(SCRIPTABLE_FOLDER),
+            "display": {}, "notifications": True, "scriptableDirectory": str(SCRIPTABLE_FOLDER),
             "codexPath": shutil.which("codex") or "codex", "claudePath": shutil.which("claude") or "claude",
             "codexbarPath": str(state / "tools/codexbar-0.56.7/codexbar"),
             "codexHome": None, "claudeConfigDir": None,
@@ -113,7 +113,7 @@ def defaults(state: Path) -> dict:
 
 
 def validate_config(config: dict) -> dict:
-    allowed = {"configVersion", "providers", "timeZone", "language", "display", "scriptableDirectory",
+    allowed = {"configVersion", "providers", "timeZone", "language", "display", "notifications", "scriptableDirectory",
                "codexPath", "claudePath", "codexbarPath", "codexHome", "claudeConfigDir", "path"}
     if set(config) - allowed:
         raise ConfigurationError("Configuration contains unknown fields")
@@ -121,6 +121,8 @@ def validate_config(config: dict) -> dict:
         raise ConfigurationError("Unsupported configVersion; expected 1")
     if config.get("language") not in ("en", "ru"):
         raise ConfigurationError("language must be en or ru")
+    if not isinstance(config.get("notifications"), bool):
+        raise ConfigurationError("notifications must be true or false")
     providers = config.get("providers")
     if not isinstance(providers, list) or not providers or any(p not in ("claude", "codex") for p in providers) or len(set(providers)) != len(providers):
         raise ConfigurationError("providers must contain claude, codex, or both, without duplicates")
@@ -185,7 +187,7 @@ def read_config(state: Path) -> dict:
 
 
 def update_config(config: dict, *, overrides: dict | None = None, providers=None, time_zone=None, language=None,
-                  hidden_limits=None, show_all=False, scriptable_directory=None) -> dict:
+                  hidden_limits=None, show_all=False, scriptable_directory=None, notifications=None) -> dict:
     result = copy.deepcopy(config)
     if overrides is not None:
         if not isinstance(overrides, dict) or set(overrides) - set(config):
@@ -198,6 +200,8 @@ def update_config(config: dict, *, overrides: dict | None = None, providers=None
         result["timeZone"] = time_zone
     if language is not None:
         result["language"] = language
+    if notifications is not None:
+        result["notifications"] = notifications
     if scriptable_directory:
         result["scriptableDirectory"] = str(Path(scriptable_directory).expanduser().resolve())
     if show_all:

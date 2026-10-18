@@ -66,6 +66,7 @@ def main():
         command.add_argument("--language", choices=("en", "ru"), help="Widget and detail-screen language (new installs: en)")
         command.add_argument("--hide-limit", action="append", help="Hide matching limit names/IDs, e.g. codex:spark")
         command.add_argument("--show-all-limits", action="store_true", help="Clear limit-name filters")
+        command.add_argument("--notifications", choices=("on", "off"), help="iPhone notifications: limit reset, pace warning, stale data (default on)")
     commands.add_parser("uninstall", help="Remove programs and LaunchAgent, retaining history")
     args = parser.parse_args()
     state = args.state.expanduser().resolve()
@@ -75,7 +76,8 @@ def main():
         if args.command in ("install", "configure"):
             overrides = json.loads(args.config.expanduser().read_text()) if args.config else None
             config = update_config(config, overrides=overrides, providers=args.providers, time_zone=args.time_zone,
-                language=args.language, hidden_limits=args.hide_limit, show_all=args.show_all_limits, scriptable_directory=args.scriptable_dir)
+                language=args.language, hidden_limits=args.hide_limit, show_all=args.show_all_limits, scriptable_directory=args.scriptable_dir,
+                notifications=None if args.notifications is None else args.notifications == "on")
         if args.command == "collect":
             configure_logging(state)
             result = collect(state, config)
@@ -87,7 +89,7 @@ def main():
         elif args.command == "configure":
             atomic_json(state / "config.json", config)
             result = {"configured": True, "providers": config["providers"], "timeZone": config["timeZone"],
-                      "language": config["language"],
+                      "language": config["language"], "notifications": config["notifications"],
                       "message": "Settings saved. They apply on the next collection; run collect to update now."}
         elif args.command == "install":
             from .install import install
