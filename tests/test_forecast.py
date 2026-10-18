@@ -27,6 +27,10 @@ class ForecastTest(unittest.TestCase):
         weekly = rows([(0, 10), (30, 11), (60, 12)], reset=7 * 1440)     # 2 points/h, runs out in 44 h
         self.assertIsNone(forecast(weekly, {"resetsAt": at(7 * 1440), "usedPercent": 12}, at(60)))
 
+    def test_lasting_beyond_horizon_is_not_called(self):
+        weekly = rows([(0, 10), (30, 10.2), (60, 10.4)], reset=3 * 1440)   # lasts, but the reset is 3 days away
+        self.assertIsNone(forecast(weekly, {"resetsAt": at(3 * 1440), "usedPercent": 10.4}, at(60)))
+
     def test_enough_until_reset(self):
         history = rows([(0, 10), (30, 11), (60, 12)])
         pace = forecast(history, {"resetsAt": at(300), "usedPercent": 12}, at(60))

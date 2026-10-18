@@ -161,61 +161,6 @@ function widgetText(element) {
   return [element.text || '', ...(element.image?.drawn || []).map(d => d.text), ...element.children.flatMap(widgetText)].flat().join(' ');
 }
 
-test('medium and large widgets show additional quotas and report overflow', () => {
-  const s = require('./fixture.js').completeSample(NOW);
-  for (const family of ['medium', 'large']) {
-    const values = widgetText(U.createWidget(s, U.parseOptions('codex'), family, {}, NOW));
-    assert(values.includes('Fable · Неделя'));
-    assert(!values.includes('Spark'));
-    assert(values.includes('79%'));
-    assert(!values.includes('53%'));
-  }
-  const p = s.providers[1];
-  for (let i = 0; i < 8; i++) p.limits.push({ ...p.limits[0], id: 'extra:' + i, groupId: 'extra' + i });
-  assert(widgetText(U.createWidget(s, U.parseOptions('codex'), 'large', {}, NOW)).includes('+8 в подробностях'));
-  assert.equal((U.overviewHTML(s, NOW).match(/class="quota-row"/g) || []).length, 13);
-});
-
-
-test('large widget draws complete quota values with the rings instead of compressible native labels', () => {
-  const snapshot = require('./fixture.js').completeSample(NOW);
-  Object.assign(snapshot.providers[1].limits[1], { id:'research:primary', groupId:'research', groupName:'Codex Research' });
-  const widget = U.createWidget(snapshot, U.parseOptions('codex'), 'large', {}, NOW);
-  const flatten = e => [e, ...e.children.flatMap(flatten)];
-  const elements = flatten(widget);
-  const images = elements.filter(e => e.image);
-  const percentages = images.flatMap(e => e.image.drawn).filter(d => /^\d+%$/.test(d.text));
-  assert.equal(percentages.length, 5);
-  assert(percentages.every(d => d.font >= 16));
-  assert(!elements.some(e => typeof e.text === 'string' && /^\d+%$/.test(e.text)));
-  assert(images.every(e => e.imageSize.width === e.image.size.width));
-  assert.match(widgetText(widget), /Research · 7 дн\./);
-  assert.equal(images.filter(e => e.image.drawn.length === 1 && /^\d+%$/.test(e.image.drawn[0].text)).length, 5);
-  assert.equal(U.nativeLimitLabel(snapshot.providers[1].limits[1], snapshot.providers[1]), 'Codex Research · Неделя');
-});
-
-test('large widget shows local tokens for today, seven and thirty days and marks stale totals', () => {
-  const snapshot = sample(NOW), p = snapshot.providers[0];
-  p.tokens.daily = [
-    { date:'2026-09-09', totalTokens:9000 }, // future rows do not count
-    { date:'2026-09-07', totalTokens:1000 },
-    { date:'2026-09-06', totalTokens:2000 },
-    { date:'2026-08-30', totalTokens:3000 },
-  ];
-  let content = widgetText(U.createWidget(snapshot, U.parseOptions('claude'), 'large', {}, NOW)).replace(/\s+/g, ' ');
-  assert(content.includes('Токены сегодня 1K 7 дней 3K 30 дней 6K'));
-  assert(content.includes('По данным этого Mac'));
-  assert(content.includes('68%'));
-  p.tokens.state.state = 'error';
-  content = widgetText(U.createWidget(snapshot, U.parseOptions('claude'), 'large', {}, NOW));
-  assert(content.includes('Токены*'));
-  assert(content.includes('*Устарело'));
-  p.tokens.daily = [];
-  content = widgetText(U.createWidget(snapshot, U.parseOptions('claude'), 'large', {}, NOW)).replace(/\s+/g, ' ');
-  assert(content.includes('Токены* сегодня — 7 дней — 30 дней —'));
-});
-
-
 test('display preferences preserve Fable values and raw history while hiding Spark and Sonnet', () => {
   const raw = require('./fixture.js').completeSample(NOW), claude = raw.providers[0], codex = raw.providers[1];
   claude.limits.push({ ...claude.limits[2], id:'claude:sonnet', title:'Sonnet', usedPercent:88 });
@@ -238,76 +183,6 @@ test('display preferences preserve Fable values and raw history while hiding Spa
   assert.equal(fable.resetsAt,null);
 });
 
-test('reset credits render on home widgets and details without becoming percentages', () => {
-  const snapshot = sample(NOW);
-  for (const family of ['small', 'medium', 'large']) {
-    const content = widgetText(U.createWidget(snapshot, U.parseOptions('codex'), family, {}, NOW));
-    assert.match(content, family === 'large' ? /Сбросы\s+3/ : /Сбросы\s+3/);
-  }
-  const html = U.overviewHTML(snapshot, NOW);
-  assert.match(html, /Сбросы<\/span><strong>3<\/strong>/);
-  assert(html.includes('Один из сбросов истекает'));
-  assert.equal((html.match(/class="reset-credits"/g) || []).length, 1);
-  const root = { innerHTML:'', style:{setProperty(){}}, querySelector(){return {}}, querySelectorAll(){return []} };
-  vm.runInNewContext(U.dashboardHTML(snapshot).match(/<script>([\s\S]*)<\/script>/)[1],
-    { window:{}, document:{getElementById:()=>root}, setInterval(){}, Date:class extends Date {static now(){return NOW;}} });
-  assert(root.innerHTML.includes('Сбросы'));
-});
-
-test('reset credits distinguish zero, unavailable, stale and expiry awaiting a fresh reading', () => {
-  const s = sample(NOW), p = s.providers[1];
-  p.resetCredits.availableCount = 0;
-  assert.equal(U.resetCreditInfo(p, NOW).value, '0');
-  p.resetCredits = null;
-  assert.equal(U.resetCreditInfo(p, NOW).value, '—');
-  delete p.resetCredits;
-  assert.equal(U.validateSnapshot(s), s); // old schema 1 snapshots remain readable
-  assert.equal(U.resetCreditInfo(p, NOW).value, '—');
-  p.resetCredits = { availableCount:3, nextExpiresAt:new Date(NOW + 60000).toISOString() };
-  p.limitsState.state = 'error';
-  assert.deepEqual(U.resetCreditInfo(p, NOW), {value:'3',outdated:true,note:'Данные устарели'});
-  assert(widgetText(U.createWidget(s,U.parseOptions('codex'),'large',{},NOW)).includes('Сбросы*'));
-  assert.equal(U.resetCreditInfo(p, NOW + 60000).note, 'Ожидается обновление');
-  assert.equal(U.resetCreditInfo(p, NOW + 60000).value, '—');
-  p.limitsState = {...p.limitsState,state:'ok',fetchedAt:new Date(NOW + 60000).toISOString()};
-  p.resetCredits = {availableCount:2,nextExpiresAt:null};
-  assert.equal(U.resetCreditInfo(p, NOW + 60000).value, '2');
-  for (const value of [-1, 1.5, '3', true]) {
-    p.resetCredits.availableCount = value;
-    assert.throws(() => U.validateSnapshot(s), /invalid_reset_credits/);
-  }
-});
-
-test('partial Claude response retains only a real Fable reading with its own age', () => {
-  const s = sample(NOW), p = s.providers[0];
-  const observedAt = new Date(NOW - 10 * 60000).toISOString();
-  p.limits.push({...p.limits[1], id:'claude:sonnet', title:'Sonnet', slot:'extra', usedPercent:9});
-  p.limitHistory.push({id:'claude-weekly-scoped-fable',points:[{
-    at:observedAt,usedPercent:56,resetsAt:new Date(NOW+3600000).toISOString(),breakBefore:true
-  }]});
-  const saved = JSON.stringify(s);
-  const shown = U.displaySnapshot(s), fable = shown.providers[0].limits.find(w=>w.id==='claude-weekly-scoped-fable');
-  assert.equal(U.pct(fable,p.limitsState,NOW),'44%');
-  assert.equal(U.limitState(fable,p.limitsState).fetchedAt,observedAt);
-  assert.equal(U.stale(U.limitState(fable,p.limitsState),NOW),true);
-  assert.equal(U.widgetResetText(fable,p.limitsState,NOW),'Последние данные · 10 мин назад');
-  assert.equal(JSON.stringify(s),saved); // presentation never creates quota history points
-  assert.deepEqual(U.displaySnapshot(shown),shown);
-  for(const family of ['small','medium','large']) {
-    const content = widgetText(U.createWidget(s,U.parseOptions('claude'),family,{},NOW));
-    assert(content.includes('Fable · Неделя *'));
-    assert(content.includes('44%'));
-    assert(content.includes(family === 'large' ? 'Данные устарели' : 'Последние данные · 10 мин назад'));
-    if (family === 'large') assert(content.includes('14:50'));
-  }
-  assert(U.overviewHTML(s,NOW).includes('Часть лимитов не обновилась'));
-  p.limits.push({...fable,retained:false,observedAt:undefined,usedPercent:60});
-  const fresh=U.displayLimits(p).find(w=>w.id===fable.id);
-  assert.equal(U.pct(fresh,p.limitsState,NOW),'40%');
-  assert(!U.limitLabel(fresh,p).includes('*'));
-  assert(!U.overviewHTML(s,NOW).includes('Часть лимитов не обновилась'));
-});
-
 test('fresh overall quota cannot renew an expired retained Fable reading', () => {
   const s=sample(NOW),p=s.providers[0];
   p.limitsState.fetchedAt=new Date(NOW).toISOString();
@@ -319,21 +194,6 @@ test('fresh overall quota cannot renew an expired retained Fable reading', () =>
   assert.equal(U.pct(fable,p.limitsState,NOW),'—');
   assert.equal(U.widgetResetText(fable,p.limitsState,NOW),'Ожидается обновление');
   assert.equal(p.limitHistory.at(-1).points.length,1);
-});
-
-test('activity totals deduplicate sessions across days and distinguish absent from zero', () => {
-  const s=sample(NOW),p=s.providers[0];
-  p.activity.daily=[{date:'2026-09-06',prompts:3,sessionIds:['same']},{date:'2026-09-07',prompts:2,sessionIds:['same','other']},
-    {date:'2026-09-08',prompts:100,sessionIds:['future']}];
-  assert.deepEqual(U.activityTotal(p,7,NOW,s.timeZone),{prompts:5,sessions:2,activeDays:2});
-  assert.deepEqual(U.activityTotal(p,1,NOW,s.timeZone),{prompts:2,sessions:2,activeDays:1});
-  const text=widgetText(U.createWidget(s,U.parseOptions('claude'),'large',{},NOW));
-  assert.match(text,/Сегодня\s+Промпты\s+2\s+Сессии\s+2/);
-  p.activity.daily=[{date:'2026-09-07',prompts:0,sessionIds:[]}];
-  assert.deepEqual(U.activityTotal(p,1,NOW,s.timeZone),{prompts:0,sessions:0,activeDays:0});
-  p.activity.daily[0].prompts='2';assert.throws(()=>U.validateSnapshot(s),/invalid_activity/);
-  delete p.activity;assert(U.validateSnapshot(s));
-  assert.equal(U.activityTotal(p,1,NOW,s.timeZone).prompts,null);
 });
 
 test('token breakdown handles different input/cache semantics without changing totals', () => {
@@ -364,33 +224,6 @@ test('preview uses a real supplied snapshot and demo data only when requested', 
   } finally {fs.rmSync(directory,{recursive:true,force:true});}
 });
 
-
-test('iPhone screenshot regression: full percentages include 0, 100, weekly and retained Fable', () => {
-  const snapshot = sample(NOW), p = snapshot.providers[0];
-  p.limits[0].usedPercent = 26; p.limits[1].usedPercent = 33;
-  p.limitHistory.push({id:'claude-weekly-scoped-fable', points:[{at:new Date(NOW - 17*60000).toISOString(), usedPercent:56, resetsAt:new Date(NOW+86400000).toISOString()}]});
-  const flatten = e => [e, ...e.children.flatMap(flatten)];
-  for (const screenWidth of [375, 390, 440]) {
-    global.Device.screenSize = () => ({width:screenWidth});
-    for (const used of [26, 0, 100, null]) {
-      p.limits[0].usedPercent = used;
-      const widget = U.createWidget(snapshot, U.parseOptions('claude'), 'large', {}, NOW);
-      const elements = flatten(widget), images = elements.filter(e => e.image);
-      const rings = images.filter(e => e.image.drawn.length === 1 && /^(?:\d+%|—)$/.test(e.image.drawn[0].text));
-      const drawn = rings.flatMap(e => e.image.drawn);
-      assert.deepEqual(drawn.slice(0,3).map(d=>d.text), [used === null ? '—' : (100-used)+'%', '67%', '44%']);
-      for (const image of rings) for (const d of image.image.drawn) {
-        assert(d.rect.x >= 2 && d.rect.x + d.rect.width <= image.imageSize.width - 2);
-        assert(d.rect.y >= 0 && d.rect.y + d.rect.height <= image.imageSize.height);
-        assert(d.rect.width >= d.font * (d.text.length === 4 ? 2.5 : 2));
-      }
-      assert(!elements.some(e=>e.date)); // Absolute reading times cannot look like a running reset timer.
-      assert(!widgetText(widget).includes('Обновлено'));
-      assert.equal(elements.filter(e=>e.text === '●').length, 1);
-    }
-  }
-  delete global.Device.screenSize;
-});
 
 test('quota captions use consistent rows, Almaty time and the retained window own timestamp', () => {
   const p = sample(NOW).providers[0], w = p.limits[1];
@@ -423,59 +256,6 @@ test('one title indicator covers both services, partial data and local cache', (
   assert.equal(U.widgetFreshness(s, {}, NOW), 'error');
 });
 
-
-test('large-widget typography stays identical between providers without automatic shrinking', () => {
-  const s = require('./fixture.js').completeSample(NOW);
-  const flatten = e => [e, ...e.children.flatMap(flatten)];
-  for (const width of [375, 390, 440]) {
-    global.Device.screenSize = () => ({width});
-    const widget = U.createWidget(s, U.parseOptions('codex'), 'large', {}, NOW);
-    const elements = flatten(widget), labels = elements.filter(e => typeof e.text === 'string');
-    assert(labels.every(e => e.minimumScaleFactor === 1));
-    for (const name of ['Claude Code', 'Codex']) {
-      const heading = labels.find(e => e.text === name);
-      assert.equal(heading.font, 13);
-      const row = elements.find(e => e.children.includes(heading));
-      assert.equal(row.size.height, 18);
-    }
-    for (const label of ['Сегодня', 'Промпты', 'Сессии', 'Токены сегодня', '7 дней', '30 дней']) {
-      const drawn = elements.flatMap(e => e.image?.drawn || []);
-      const matches = drawn.filter(e => e.text === label || (['Промпты','Сессии'].includes(label) && e.text.startsWith(label + ' ')));
-      assert.equal(matches.length, 2);
-      assert(matches.every(e => e.font === 9.5));
-    }
-  }
-  delete global.Device.screenSize;
-});
-
-
-test('reset captions have explicit top and bottom margins and share centered statistic columns', () => {
-  const s = require('./fixture.js').completeSample(NOW);
-  const flatten = e => [e, ...e.children.flatMap(flatten)];
-  const widget = U.createWidget(s, U.parseOptions('codex'), 'large', {}, NOW);
-  const images = flatten(widget).filter(e => e.image);
-  const captions = images.filter(e => e.imageSize.height === 30 && e.image.drawn.length >= 1);
-  assert.equal(captions.length, 5);
-  for (const image of captions) {
-    assert.equal(image.imageSize.height, 30);
-    for (const line of image.image.drawn) {
-      assert(line.rect.y >= 2);
-      assert(line.rect.y + line.rect.height <= image.imageSize.height - 1);
-      assert(line.rect.height >= line.font * 1.3);
-    }
-  }
-  const stats = images.filter(e => e.image.drawn.some(d => d.text === 'Токены сегодня'));
-  assert.equal(stats.length, 2);
-  for (const image of stats) {
-    assert.equal(image.imageSize.height, 48);
-    const rows = image.image.drawn;
-    for (let i=0; i<3; i++) {
-      assert.equal(rows[i*2].rect.x, rows[i*2+1].rect.x);
-      assert.equal(rows[i*2].rect.x, rows[6+i].rect.x);
-    }
-    for (const line of rows) assert(line.rect.y >= 1 && line.rect.y + line.rect.height <= 47);
-  }
-});
 
 test('public defaults show every returned limit without inventing a pinned model', () => {
   const s = require('./fixture.js').publicSample(NOW);
@@ -517,26 +297,6 @@ test('configured pins retain only their exact history and hidden terms take prec
   p.display.hiddenLimitTerms=['CUSTOM'];
   assert(!U.displayLimits(p).some(w=>w.id==='custom:model'));
   p.display.hiddenLimitTerms=[5];assert.throws(()=>U.validateSnapshot(s),/invalid_display/);
-});
-
-test('English widgets translate all sizes and keep language in detail links', () => {
-  const snapshot=require('./fixture.js').completeSample(NOW);
-  snapshot.language='en';
-  for (const family of ['small','medium','large','accessoryCircular','accessoryInline','accessoryRectangular']) {
-    const widget=U.createWidget(snapshot,U.parseOptions('claude'),family,{},NOW);
-    const content=widgetText(widget);
-    assert(!/[А-Яа-яЁё]/.test(content), family+': '+content);
-    assert(widget.url.includes('&lang=en'));
-    if (family==='large') {
-      for (const label of ['AI Usage','Remaining','Weekly','Tokens today','Prompts','Sessions','Resets','This Mac']) assert(content.includes(label),label);
-    }
-  }
-  const legacy={...snapshot};delete legacy.language;
-  assert(widgetText(U.createWidget(legacy,U.parseOptions('codex'),'large',{},NOW)).includes('Лимиты и токены'));
-  assert(widgetText(U.createWidget(legacy,U.parseOptions('codex;lang=en'),'large',{},NOW)).includes('AI Usage'));
-  assert(widgetText(U.createWidget(snapshot,U.parseOptions('codex;lang=ru'),'large',{},NOW)).includes('Лимиты и токены'));
-  assert.equal(U.parseOptions('lang=bad').language,null);
-  assert.throws(()=>U.validateSnapshot({...snapshot,language:'bad'}),/invalid_language/);
 });
 
 test('localized dates, stale and reset-due captions preserve values and isolate locales', () => {
@@ -681,4 +441,156 @@ test('detail screen shows the forecast line', () => {
   assert(page.body.includes('При текущем темпе кончится'));
   s.language = 'en';
   assert(renderDashboardForTest(s, 'en').body.includes('At this pace it runs out'));
+});
+
+// ---------------------------------------------------------------- 1.1 design: package cards
+
+const flattenWidget = e => [e, ...e.children.flatMap(flattenWidget)];
+const drawnTexts = widget => flattenWidget(widget).flatMap(e => e.image?.drawn || []).map(d => d.text);
+
+test('package cards: the riskiest limit leads, other limits follow and overflow is counted', () => {
+  const s = require('./fixture.js').completeSample(NOW);                 // Claude: 68 / 42 / 79 left
+  const large = U.createWidget(s, U.parseOptions('codex'), 'large', {}, NOW);
+  const claudeLead = U.bindingLimit(U.displaySnapshot(s).providers[0], NOW);
+  assert.equal(claudeLead.id, 'claude:secondary');
+  const texts = drawnTexts(large);
+  assert(texts.includes('42%'));
+  assert(texts.some(t => /5 часов 68% · Fable · Неделя 79%/.test(t)), 'a short card lists the other limits in its footer');
+  const single = { ...s, providers: [s.providers[0]] };                  // one service: room for every limit
+  const one = drawnTexts(U.createWidget(single, U.parseOptions('claude'), 'large', {}, NOW));
+  for (const value of ['42%', '68%', '79%']) assert(one.includes(value), value);
+  assert(one.includes('Fable · Неделя'));
+  const p = s.providers[1];
+  for (let i = 0; i < 8; i++) p.limits.push({ ...p.limits[0], id: 'extra:' + i, groupId: 'extra' + i });
+  assert(drawnTexts(U.createWidget(s, U.parseOptions('codex'), 'medium', {}, NOW)).some(t => /\+\d+ в подробностях/.test(t)));
+  const atRisk = withPace(sample(NOW), 60);                             // a warned limit leads even with more left
+  assert.equal(U.bindingLimit(atRisk.providers[0], NOW).id, 'claude:primary');
+});
+
+test('percentages are drawn inside their canvas at every phone width, including 0, 100 and missing', () => {
+  const snapshot = sample(NOW), p = snapshot.providers[0];
+  for (const screenWidth of [320, 375, 390, 440]) {
+    global.Device.screenSize = () => ({ width: screenWidth });
+    for (const used of [26, 0, 100, null]) {
+      p.limits[0].usedPercent = used;
+      for (const family of ['small', 'medium', 'large']) {
+        const widget = U.createWidget(snapshot, U.parseOptions('claude'), family, {}, NOW);
+        const elements = flattenWidget(widget), images = elements.filter(e => e.image);
+        assert(!elements.some(e => typeof e.text === 'string' && /^\d+%$/.test(e.text)), 'no native percentage text');
+        for (const image of images) {
+          assert.equal(image.imageSize.width, image.image.size.width);
+          for (const d of image.image.drawn) {
+            assert(d.rect.x >= 0 && d.rect.x + d.rect.width <= image.image.size.width + 0.5, family + ' x ' + d.text);
+            assert(d.rect.y >= 0 && d.rect.y + d.rect.height <= image.image.size.height + 0.5, family + ' y ' + d.text);
+          }
+        }
+        const texts = images.flatMap(e => e.image.drawn).map(d => d.text);
+        if (used === 100) assert(texts.includes('0%'));
+        if (used === null && family !== 'small') assert(texts.some(t => /^\d+%$/.test(t)));
+        const big = images.flatMap(e => e.image.drawn).find(d => /^(\d+%|—)$/.test(d.text));
+        assert(big.font >= 44, 'the lead value is display-sized');
+      }
+    }
+  }
+  delete global.Device.screenSize;
+});
+
+test('verdicts: runs out, lasts until the reset, renews, and stale data drains the card', () => {
+  const warn = withPace(sample(NOW), 60), p = warn.providers[0];
+  let v = U.packageVerdict(p.limits[0], p, NOW, 'Asia/Almaty');
+  assert.equal(v.mood, 'warn'); assert.match(v.text, /^Кончится ~\d\d:\d\d$/); assert.match(v.detail, /без лимита до \d\d:\d\d$/);
+  assert(v.fraction > 0 && v.fraction < 1);
+  const calm = withPace(sample(NOW), null).providers[0];
+  v = U.packageVerdict(calm.limits[0], calm, NOW, 'Asia/Almaty');
+  assert.equal(v.mood, 'ok'); assert.match(v.text, /^Хватит до /); assert.match(v.detail, /к сбросу останется ~26%/);
+  const plain = sample(NOW).providers[0];
+  v = U.packageVerdict(plain.limits[0], plain, NOW, 'Asia/Almaty');
+  assert.equal(v.mood, 'plain'); assert.match(v.text, /^Обновится /); assert.match(v.detail, /^прогноза пока нет · через 1 ч 50 мин$/);
+  const far = sample(NOW).providers[0];
+  assert.match(U.packageVerdict(far.limits[1], far, NOW, 'Asia/Almaty').detail, /^прогноз только на 6 ч · через 3 дн/); assert.equal(v.fraction, null);
+  const s = sample(NOW); s.providers[0].limitsState = { ...s.providers[0].limitsState, state: 'error', code: 'auth' };
+  const widget = U.createWidget(s, U.parseOptions('claude'), 'medium', {}, NOW);
+  assert(drawnTexts(widget).some(t => t.startsWith('Данные устарели · ')));
+  assert.equal(widget.backgroundColor.hex, flattenWidget(widget).find(e => e.cornerRadius !== undefined).backgroundColor.hex);
+  assert.notEqual(widget.backgroundColor.hex, 'C2512B');
+  assert.match(U.forLanguage('en').packageVerdict(warn.providers[0].limits[0], warn.providers[0], NOW, 'Asia/Almaty').detail, /without quota until/);
+});
+
+test('cards carry today tokens, prompts and Codex reset credits, with stale markers', () => {
+  const s = sample(NOW);
+  for (const family of ['small', 'medium', 'large']) assert(drawnTexts(U.createWidget(s, U.parseOptions('codex'), family, {}, NOW)).some(t => /Сбросов: 3/.test(t)), family);
+  const single = { ...s, providers: [s.providers[0]] };
+  s.providers[0].tokens.daily = [{ date: '2026-09-07', totalTokens: 1000 }, { date: '2026-09-09', totalTokens: 9000 }];
+  let footer = drawnTexts(U.createWidget(single, U.parseOptions('claude'), 'large', {}, NOW)).find(t => t.includes('токенов сегодня'));
+  assert.match(footer, /токенов сегодня: 1K/);
+  assert.match(footer, /промптов: 12/);
+  s.providers[0].tokens.state.state = 'error';
+  footer = drawnTexts(U.createWidget(single, U.parseOptions('claude'), 'large', {}, NOW)).find(t => t.includes('токенов сегодня'));
+  assert.match(footer, /токенов сегодня: 1K\*/);
+  s.providers[1].limitsState.state = 'error';
+  assert(drawnTexts(U.createWidget(s, U.parseOptions('codex'), 'large', {}, NOW)).some(t => /Сбросов: 3\*/.test(t)));
+});
+
+test('reset credits never become percentages and track zero, unavailable, stale and expiry', () => {
+  const snapshot = sample(NOW);
+  const html = U.overviewHTML(snapshot, NOW);
+  assert.match(html, /Сбросы<\/span><strong>3<\/strong>/);
+  assert(html.includes('Один из сбросов истекает'));
+  assert.equal((html.match(/class="reset-credits"/g) || []).length, 1);
+  const s = sample(NOW), p = s.providers[1];
+  p.resetCredits.availableCount = 0; assert.equal(U.resetCreditInfo(p, NOW).value, '0');
+  p.resetCredits = null; assert.equal(U.resetCreditInfo(p, NOW).value, '—');
+  delete p.resetCredits; assert.equal(U.validateSnapshot(s), s); assert.equal(U.resetCreditInfo(p, NOW).value, '—');
+  p.resetCredits = { availableCount: 3, nextExpiresAt: new Date(NOW + 60000).toISOString() };
+  p.limitsState.state = 'error';
+  assert.deepEqual(U.resetCreditInfo(p, NOW), { value: '3', outdated: true, note: 'Данные устарели' });
+  assert.equal(U.resetCreditInfo(p, NOW + 60000).note, 'Ожидается обновление');
+  p.limitsState = { ...p.limitsState, state: 'ok', fetchedAt: new Date(NOW + 60000).toISOString() };
+  p.resetCredits = { availableCount: 2, nextExpiresAt: null }; assert.equal(U.resetCreditInfo(p, NOW + 60000).value, '2');
+  for (const value of [-1, 1.5, '3', true]) { p.resetCredits.availableCount = value; assert.throws(() => U.validateSnapshot(s), /invalid_reset_credits/); }
+});
+
+test('a retained Fable reading keeps its own age and is marked on the card', () => {
+  const s = sample(NOW), p = s.providers[0];
+  const observedAt = new Date(NOW - 10 * 60000).toISOString();
+  p.limitHistory.push({ id: 'claude-weekly-scoped-fable', points: [{ at: observedAt, usedPercent: 56, resetsAt: new Date(NOW + 3600000).toISOString(), breakBefore: true }] });
+  const saved = JSON.stringify(s);
+  const fable = U.displaySnapshot(s).providers[0].limits.find(w => w.id === 'claude-weekly-scoped-fable');
+  assert.equal(U.pct(fable, p.limitsState, NOW), '44%');
+  assert.equal(U.stale(U.limitState(fable, p.limitsState), NOW), true);
+  assert.equal(JSON.stringify(s), saved);
+  const texts = drawnTexts(U.createWidget({ ...s, providers: [p] }, U.parseOptions('claude'), 'large', {}, NOW));
+  assert(texts.includes('Fable · Неделя *')); assert(texts.includes('44%'));
+  assert(U.overviewHTML(s, NOW).includes('Часть лимитов не обновилась'));
+});
+
+test('activity totals deduplicate sessions across days and distinguish absent from zero', () => {
+  const s = sample(NOW), p = s.providers[0];
+  p.activity.daily = [{ date: '2026-09-06', prompts: 3, sessionIds: ['same'] }, { date: '2026-09-07', prompts: 2, sessionIds: ['same', 'other'] },
+    { date: '2026-09-08', prompts: 100, sessionIds: ['future'] }];
+  assert.deepEqual(U.activityTotal(p, 7, NOW, s.timeZone), { prompts: 5, sessions: 2, activeDays: 2 });
+  assert.deepEqual(U.activityTotal(p, 1, NOW, s.timeZone), { prompts: 2, sessions: 2, activeDays: 1 });
+  assert(drawnTexts(U.createWidget({ ...s, providers: [p] }, U.parseOptions('claude'), 'large', {}, NOW)).some(t => /промптов: 2/.test(t)));
+  p.activity.daily = [{ date: '2026-09-07', prompts: 0, sessionIds: [] }];
+  assert.deepEqual(U.activityTotal(p, 1, NOW, s.timeZone), { prompts: 0, sessions: 0, activeDays: 0 });
+  p.activity.daily[0].prompts = '2'; assert.throws(() => U.validateSnapshot(s), /invalid_activity/);
+  delete p.activity; assert(U.validateSnapshot(s));
+  assert.equal(U.activityTotal(p, 1, NOW, s.timeZone).prompts, null);
+});
+
+test('English widgets translate every size and keep the language in detail links', () => {
+  const snapshot = withPace(require('./fixture.js').completeSample(NOW), 60);
+  snapshot.language = 'en';
+  for (const family of ['small', 'medium', 'large', 'accessoryCircular', 'accessoryInline', 'accessoryRectangular']) {
+    const widget = U.createWidget(snapshot, U.parseOptions('codex'), family, {}, NOW);
+    const content = widgetText(widget);
+    assert(!/[А-Яа-яЁё]/.test(content), family + ': ' + content);
+    assert(widget.url.includes('&lang=en'));
+    if (family === 'large') for (const label of ['Claude Code', 'Codex', 'left · ', ' limit', 'Runs out', 'without quota until', 'Resets: ']) assert(content.includes(label), label);
+  }
+  const legacy = { ...snapshot }; delete legacy.language;
+  assert(widgetText(U.createWidget(legacy, U.parseOptions('codex'), 'large', {}, NOW)).includes('осталось'));
+  assert(widgetText(U.createWidget(snapshot, U.parseOptions('codex;lang=ru'), 'large', {}, NOW)).includes('Кончится ~'));
+  assert.equal(U.parseOptions('lang=bad').language, null);
+  assert.throws(() => U.validateSnapshot({ ...snapshot, language: 'bad' }), /invalid_language/);
 });

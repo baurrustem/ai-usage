@@ -19,7 +19,7 @@ RULES = {
     'personal email': re.compile(r'\b[A-Za-z0-9._%+-]+@(?:gmail\.com|icloud\.com|outlook\.com|yahoo\.com)\b', re.I),
 }
 # Reviewed synthetic screenshots only; changing an image requires visual review and a new digest.
-REVIEWED_IMAGES = {'docs/images/widget-dark.png': '45f3a0140c928db89d7f67100539e1881aa7ced681f33b86b6250ebb0ddd967c', 'docs/images/widget-light.png': 'e4fb2177d31a67d0d9e35cf9546a225bbb0b0701e807fc7e9e3301d1aaec4057'}
+REVIEWED_IMAGES = {'docs/images/widget-dark.png': 'eff4eda0cc278e599c33af2e67e7018dd0265f4d6f17d57d61ece5e97712a6ae', 'docs/images/widget-light.png': '43f431e9e56979bd4a140822696c9cee7c2aa85e1de810029bd74061b7f6352a'}
 FORBIDDEN = {'.cache', '.private', 'artifacts', 'dist', 'node_modules', '__pycache__', '.env', 'config.json', 'snapshot.json', 'status.json', 'auth.json', 'credentials.json'}
 
 

@@ -52,6 +52,8 @@ def forecast(rows: list[dict], window: dict, now: str) -> dict | None:
     rate = max(0.0, (u1 - u0) / (t1 - t0))
     at_reset = min(100.0, u1 + rate * (reset - t1))
     exhausts = None
+    if reset - current > HORIZON and not (rate > 0 and at_reset >= 100):
+        return None                 # "lasts until a reset days away" is not a claim one hour of work supports
     if rate > 0 and at_reset >= 100:
         runs_out = t1 + (100 - u1) / rate
         if runs_out - current > HORIZON:

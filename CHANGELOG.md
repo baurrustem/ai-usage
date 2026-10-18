@@ -10,6 +10,7 @@
   - *no data from the Mac*, after 24 hours without a snapshot.
 
   Each notification fires once. Notification failures never break the widget.
+- **New design for the home-screen widgets.** Each service is a solid colour card (Claude clay, Codex pine). The limit most at risk leads with its remaining percent in large type, next to its verdict: *Runs out ~21:45* on amber, *Lasts until 22:25*, or *Renews Wed 20:35*. A time bar runs from now to the reset; the hatched part is the time left without quota. Other limits, reset credits and today's tokens sit in one line. Stale data turns the card graphite with a text label. The small, medium and large widgets share this layout. Lock-screen widgets are unchanged. The design system is recorded in DESIGN.md.
 - **Fix:** providers can report the same reset a minute apart. History charts no longer break at that jitter.
 - `tools/backtest_forecast.py` replays the forecast over your own local history and prints aggregate accuracy only.
 

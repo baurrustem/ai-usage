@@ -21,16 +21,18 @@ class DrawContext {
   setStrokeColor(c) { this.stroke = c; } setFillColor(c) { this.fill = c; }
   setLineWidth(w) { this.lineWidth = w; } addPath(p) { this.paths.push(p); }
   setTextColor(c) { this.textColor = c; } setTextAlignedCenter() { this.textAlignment = 'middle'; }
+  setTextAlignedLeft() { this.textAlignment = 'start'; } setTextAlignedRight() { this.textAlignment = 'end'; }
+  fillPath() { this.shapes.push(...this.paths.map(p => '<path d="' + p.commands.join(' ') + '" fill="' + colorCSS(this.fill) + '" fill-opacity="' + (this.fill?.opacity ?? 1) + '"/>')); this.paths = []; }
   setFont(font) { this.font = font; }
   drawTextInRect(value, rect) {
-    const x = this.textAlignment === 'middle' ? rect.x + rect.width / 2 : rect.x;
-    this.shapes.push('<text data-drawn-text data-rect="' + [rect.x,rect.y,rect.width,rect.height].join(',') + '" x="' + x + '" y="' + (rect.y + this.font.size * .98) + '" text-anchor="' + (this.textAlignment || 'start') + '" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="' + this.font.size + '" font-weight="' + this.font.weight + '" fill="' + colorCSS(this.textColor) + '">' + esc(value) + '</text>');
+    const x = this.textAlignment === 'middle' ? rect.x + rect.width / 2 : this.textAlignment === 'end' ? rect.x + rect.width : rect.x;
+    this.shapes.push('<text data-drawn-text data-rect="' + [rect.x,rect.y,rect.width,rect.height].join(',') + '" x="' + x + '" y="' + (rect.y + this.font.size * .98) + '" text-anchor="' + (this.textAlignment || 'start') + '" font-family="' + (this.font.family || '-apple-system,BlinkMacSystemFont,sans-serif') + '" font-size="' + this.font.size + '" font-weight="' + this.font.weight + '" fill="' + colorCSS(this.textColor) + '" fill-opacity="' + (this.textColor?.opacity ?? 1) + '">' + esc(value) + '</text>');
   }
   strokePath() {
     this.shapes.push(...this.paths.map(p => '<path d="' + p.commands.join(' ') + '" fill="none" stroke="' + colorCSS(this.stroke) + '" stroke-opacity="' + (this.stroke?.opacity ?? 1) + '" stroke-width="' + this.lineWidth + '"/>'));
     this.paths = [];
   }
-  fillRect(r) { this.shapes.push('<rect x="' + r.x + '" y="' + r.y + '" width="' + r.width + '" height="' + r.height + '" fill="' + colorCSS(this.fill) + '"/>'); }
+  fillRect(r) { this.shapes.push('<rect x="' + r.x + '" y="' + r.y + '" width="' + r.width + '" height="' + r.height + '" fill="' + colorCSS(this.fill) + '" fill-opacity="' + (this.fill?.opacity ?? 1) + '"/>'); }
   fillEllipse(r) { this.shapes.push('<ellipse cx="' + (r.x + r.width / 2) + '" cy="' + (r.y + r.height / 2) + '" rx="' + r.width / 2 + '" ry="' + r.height / 2 + '" fill="' + colorCSS(this.fill) + '"/>'); }
   getImage() { return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + this.size.width + '" height="' + this.size.height + '" viewBox="0 0 ' + this.size.width + ' ' + this.size.height + '">' + this.shapes.join('') + '</svg>' }; }
 }
@@ -41,6 +43,7 @@ function render(e, parentDirection = 'column') {
   if (e.size?.height) css += 'height:' + e.size.height + 'px;flex-shrink:0;';
   if (e.padding) css += 'padding:' + e.padding.map(v => v + 'px').join(' ') + ';';
   if (e.backgroundColor) css += 'background-color:' + colorCSS(e.backgroundColor) + ';';
+  if (e.cornerRadius) css += 'border-radius:' + e.cornerRadius + 'px;overflow:hidden;';
   if (e.backgroundImage?.svg) css += 'background-image:url(&quot;data:image/svg+xml,' + encodeURIComponent(e.backgroundImage.svg) + '&quot;);background-size:100% 100%;background-repeat:no-repeat;';
   if (e.kind === 'text') {
     css += 'font-size:' + e.font.size + 'px;font-weight:' + e.font.weight + ';color:' + colorCSS(e.textColor) + ';line-height:1.2;flex-shrink:' + (parentDirection === 'column' ? 0 : 1) + ';';
@@ -53,18 +56,21 @@ function render(e, parentDirection = 'column') {
   if (e.kind === 'widget') css += 'width:100%;height:100%;';
   return '<div' + (e.backgroundImage ? ' data-native-chart' : '') + ' style="' + css + '">' + e.children.map(child => render(child, e.direction)).join('') + '</div>';
 }
-function widgetHTML(snapshot, now, screenWidth = 440, dark = false) {
+function widgetHTML(snapshot, now, screenWidth = 440, dark = false, family = 'large', provider = 'codex') {
   previewNow = now;
   global.ListWidget = class extends Element { constructor() { super('widget'); } };
   global.Color = class { constructor(hex, opacity = 1) { this.hex = hex; this.opacity = opacity; } };
   global.Size = class { constructor(width, height) { this.width = width; this.height = height; } };
   global.Point = class { constructor(x, y) { this.x = x; this.y = y; } };
   global.Rect = class { constructor(x, y, width, height) { Object.assign(this, {x, y, width, height}); } };
-  global.Path = class { constructor() { this.commands = []; } move(p) { this.commands.push('M' + p.x + ',' + p.y); } addLine(p) { this.commands.push('L' + p.x + ',' + p.y); } };
+  global.Path = class { constructor() { this.commands = []; } move(p) { this.commands.push('M' + p.x + ',' + p.y); } addLine(p) { this.commands.push('L' + p.x + ',' + p.y); }
+    addRoundedRect(r, rx, ry) { rx = Math.min(rx, r.width / 2, r.height / 2); this.commands.push('M' + (r.x + rx) + ',' + r.y + ' H' + (r.x + r.width - rx) + ' A' + rx + ',' + rx + ' 0 0 1 ' + (r.x + r.width) + ',' + (r.y + rx) + ' V' + (r.y + r.height - rx) + ' A' + rx + ',' + rx + ' 0 0 1 ' + (r.x + r.width - rx) + ',' + (r.y + r.height) + ' H' + (r.x + rx) + ' A' + rx + ',' + rx + ' 0 0 1 ' + r.x + ',' + (r.y + r.height - rx) + ' V' + (r.y + rx) + ' A' + rx + ',' + rx + ' 0 0 1 ' + (r.x + rx) + ',' + r.y + ' Z'); } };
   global.DrawContext = DrawContext;
-  global.Font = { systemFont: size => ({size,weight:400}), mediumSystemFont: size => ({size,weight:500}), boldSystemFont: size => ({size,weight:700}), semiboldSystemFont: size => ({size,weight:600}) };
+  const FAMILIES = { 'DINCondensed-Bold': "'DIN Condensed','DINCondensed-Bold','Arial Narrow',sans-serif" };
+  global.Font = function (name, size) { return { size, weight: 700, family: FAMILIES[name] || name }; };
+  Object.assign(global.Font, { systemFont: size => ({size,weight:400}), mediumSystemFont: size => ({size,weight:500}), boldSystemFont: size => ({size,weight:700}), semiboldSystemFont: size => ({size,weight:600}) });
   global.Device = { isUsingDarkAppearance: () => dark, screenSize: () => ({width:screenWidth,height:956}) };
-  const widget = U.createWidget(snapshot, U.parseOptions('codex'), 'large', {}, now);
+  const widget = U.createWidget(snapshot, U.parseOptions(provider), family, {}, now);
   return render(widget);
 }
 module.exports = { widgetHTML };
